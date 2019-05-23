@@ -29,7 +29,7 @@ def load_mtl(filename_mtl):
     return colors, texture_filenames
 
 
-def load_textures(filename_obj, filename_mtl, texture_size, texture_wrapping='REPEAT', use_bilinear=True):
+def load_textures(filename_obj, filename_mtl, texture_size, texture_wrapping='REPEAT', use_bilinear=True, texture_image=None):
     # load vertices
     vertices = []
     with open(filename_obj) as f:
@@ -85,7 +85,10 @@ def load_textures(filename_obj, filename_mtl, texture_size, texture_wrapping='RE
                 textures[i, :, :, :, :] = color[None, None, None, :]
 
     for material_name, filename_texture in texture_filenames.items():
-        filename_texture = os.path.join(os.path.dirname(filename_obj), filename_texture)
+        if texture_image is not None:
+            filename_texture = texture_image
+        else:
+            filename_texture = os.path.join(os.path.dirname(filename_obj), filename_texture)
         image = imread(filename_texture).astype(np.float32) / 255.
 
         # texture image may have one channel (grey color)
@@ -106,7 +109,7 @@ def load_textures(filename_obj, filename_mtl, texture_size, texture_wrapping='RE
     return textures
 
 def load_obj(filename_obj, normalization=True, texture_size=4, load_texture=False,
-             texture_wrapping='REPEAT', use_bilinear=True):
+             texture_wrapping='REPEAT', use_bilinear=True, texture_image=None):
     """
     Load Wavefront .obj file.
     This function only supports vertices (v x x x) and faces (f x x x).
@@ -147,7 +150,8 @@ def load_obj(filename_obj, normalization=True, texture_size=4, load_texture=Fals
                 filename_mtl = os.path.join(os.path.dirname(filename_obj), line.split()[1])
                 textures = load_textures(filename_obj, filename_mtl, texture_size,
                                          texture_wrapping=texture_wrapping,
-                                         use_bilinear=use_bilinear)
+                                         use_bilinear=use_bilinear,
+                                         texture_image=texture_image)
         if textures is None:
             raise Exception('Failed to load textures.')
 

@@ -1,0 +1,5 @@
+newmtl template
+Ka 0.000000 0.000000 0.000000
+Kd 1.0 1.0 1.0
+Ks 1.00000 1.00000 1.00000
+map_Kd human.jpg

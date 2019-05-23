@@ -1,3 +1,7 @@
+import numpy as np
+from skimage.io import imread
+from skimage.transform import resize
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,7 +23,7 @@ class RasterizeFunction(Function):
     Currently implemented only for cuda Tensors
     '''
     @staticmethod
-    def forward(ctx, faces, textures, image_size, near, far, eps, background_color,
+    def forward(ctx, faces, textures, image_size, near, far, eps, background_color, backgrounf_image=None,
                 return_rgb=False, return_alpha=False, return_depth=False):
         '''
         Forward pass
@@ -29,6 +33,7 @@ class RasterizeFunction(Function):
         ctx.far = far
         ctx.eps = eps
         ctx.background_color = background_color
+        ctx.backgrounf_image = backgrounf_image
         ctx.return_rgb = return_rgb
         ctx.return_alpha = return_alpha
         ctx.return_depth = return_depth
@@ -186,12 +191,19 @@ class RasterizeFunction(Function):
     @staticmethod
     def forward_background(ctx, face_index_map, rgb_map):
         if ctx.return_rgb:
-            background_color = torch.cuda.FloatTensor(ctx.background_color)
             mask = (face_index_map >= 0).float()[:, :, :, None]
-            if background_color.ndimension() == 1:
-                rgb_map = rgb_map * mask + (1-mask) * background_color[None, None, None, :]
-            elif background_color.ndimension() == 2:
-                rgb_map = rgb_map * mask + (1-mask) * background_color[:, None, None, :]
+            if ctx.backgrounf_image is not None:
+                background_image = imread(ctx.backgrounf_image).astype(np.float32)
+                if background_image.shape != [ctx.image_size, ctx.image_size, 3]:
+                    background_image = resize(background_image, (ctx.image_size, ctx.image_size), anti_aliasing=True, mode='reflect')
+                background_image = torch.from_numpy(background_image[::-1, :, :] / 255.).float().cuda()
+                rgb_map = rgb_map * mask + (1-mask) * background_image[None, :, :, :]
+            else:
+                background_color = torch.cuda.FloatTensor(ctx.background_color)
+                if background_color.ndimension() == 1:
+                    rgb_map = rgb_map * mask + (1-mask) * background_color[None, None, None, :]
+                elif background_color.ndimension() == 2:
+                    rgb_map = rgb_map * mask + (1-mask) * background_color[:, None, None, :]
         return rgb_map
 
     @staticmethod
@@ -230,7 +242,7 @@ class Rasterize(nn.Module):
     Wrapper around the autograd function RasterizeFunction
     Currently implemented only for cuda Tensors
     '''
-    def __init__(self, image_size, near, far, eps, background_color,
+    def __init__(self, image_size, near, far, eps, background_color, backgrounf_image=None,
                  return_rgb=False, return_alpha=False, return_depth=False):
         super(Rasterize, self).__init__()
         self.image_size = image_size
@@ -239,6 +251,7 @@ class Rasterize(nn.Module):
         self.far = far
         self.eps = eps
         self.background_color = background_color
+        self.backgrounf_image = backgrounf_image
         self.return_rgb = return_rgb
         self.return_alpha = return_alpha
         self.return_depth = return_depth
@@ -247,7 +260,7 @@ class Rasterize(nn.Module):
         if faces.device == "cpu" or (textures is not None and textures.device == "cpu"):
             raise TypeError('Rasterize module supports only cuda Tensors')
         return RasterizeFunction.apply(faces, textures, self.image_size, self.near, self.far,
-                                       self.eps, self.background_color,
+                                       self.eps, self.background_color, self.backgrounf_image,
                                        self.return_rgb, self.return_alpha, self.return_depth)
 
 def rasterize_rgbad(
@@ -259,6 +272,7 @@ def rasterize_rgbad(
         far=DEFAULT_FAR,
         eps=DEFAULT_EPS,
         background_color=DEFAULT_BACKGROUND_COLOR,
+        backgrounf_image=None,
         return_rgb=True,
         return_alpha=True,
         return_depth=True,
@@ -297,10 +311,10 @@ def rasterize_rgbad(
     if anti_aliasing:
         # 2x super-sampling
         rgb, alpha, depth = Rasterize(
-            image_size * 2, near, far, eps, background_color, return_rgb, return_alpha, return_depth)(*inputs)
+            image_size * 2, near, far, eps, background_color, backgrounf_image, return_rgb, return_alpha, return_depth)(*inputs)
     else:
         rgb, alpha, depth = Rasterize(
-            image_size, near, far, eps, background_color, return_rgb, return_alpha, return_depth)(*inputs)
+            image_size, near, far, eps, background_color, backgrounf_image, return_rgb, return_alpha, return_depth)(*inputs)
 
     # transpose & vertical flip
     if return_rgb:
@@ -362,7 +376,7 @@ def rasterize(
 
     """
     return rasterize_rgbad(
-        faces, textures, image_size, anti_aliasing, near, far, eps, background_color, True, False, False)['rgb']
+        faces, textures, image_size, anti_aliasing, near, far, eps, background_color, None, True, False, False)['rgb']
 
 def rasterize(
         faces,
@@ -417,7 +431,7 @@ def rasterize_silhouettes(
         ~torch.Tensor: Alpha channels. The shape is [batch size, image_size, image_size].
 
     """
-    return rasterize_rgbad(faces, None, image_size, anti_aliasing, near, far, eps, None, False, True, False)['alpha']
+    return rasterize_rgbad(faces, None, image_size, anti_aliasing, near, far, eps, None, None, False, True, False)['alpha']
 
 
 def rasterize_depth(
@@ -443,4 +457,4 @@ def rasterize_depth(
         ~torch.Tensor: Depth images. The shape is [batch size, image_size, image_size].
 
     """
-    return rasterize_rgbad(faces, None, image_size, anti_aliasing, near, far, eps, None, False, False, True)['depth']
+    return rasterize_rgbad(faces, None, image_size, anti_aliasing, near, far, eps, None, None, False, False, True)['depth']

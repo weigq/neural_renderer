@@ -16,12 +16,14 @@ class Renderer(nn.Module):
                  near=0.1, far=100,
                  light_intensity_ambient=0.5, light_intensity_directional=0.5,
                  light_color_ambient=[1,1,1], light_color_directional=[1,1,1],
-                 light_direction=[0,1,0]):
+                 light_direction=[0,1,0],
+                 background_image=None):
         super(Renderer, self).__init__()
         # rendering
         self.image_size = image_size
         self.anti_aliasing = anti_aliasing
         self.background_color = background_color
+        self.background_image= background_image
         self.fill_back = fill_back
 
         # camera
@@ -242,5 +244,5 @@ class Renderer(nn.Module):
         faces = nr.vertices_to_faces(vertices, faces)
         out = nr.rasterize_rgbad(
             faces, textures, self.image_size, self.anti_aliasing, self.near, self.far, self.rasterizer_eps,
-            self.background_color)
+            self.background_color, self.background_image)
         return out['rgb'], out['depth'], out['alpha']
